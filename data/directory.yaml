@@ -7727,3 +7727,68 @@
   - 'GitHub repository search via the API: the witness multiplayer, witness coop, the witness randomizer, TheWitnessExplorer, witness64_d3d11 (no co-op project), 2026-10-22'
   - 'WebSearch (extended): The Witness Jonathan Blow multiplayer co-op mod; also randomizer / Archipelago client and engine queries (no co-op mod), 2026-10-22'
   - 'Not checked: Nexus Mods, ModDB, Reddit, archive.org, Steam guides in depth, the game or speedrun Discords, non-English communities'
+- game: Hydroneer
+  year: 2020
+  engine: Unreal Engine 4 (4.26)
+  project: Official split-screen / Remote Play co-op
+  url: https://techraptor.net/gaming/guides/hydroneer-multiplayer-guide
+  other_urls:
+  - https://techraptor.net/gaming/news/hydroneer-20-multiplayer-update-is-out-now
+  kind: official
+  status: official
+  coop_scope:
+    players_visible: 'yes'
+    story: 'yes'
+    enemies: 'no'
+    world_state: 'yes'
+    items: shared
+  players: 2 to 4 local (sources disagree)
+  networking: steam-relay
+  open_source: 'no'
+  last_activity: unknown
+  qa: community-reports
+  notes: Added in the 2.0 update (it existed by 2022-08-03 per the Steam thread; exact release date not checked). It is split screen in one game; online play streams that screen through Steam Remote Play Together, so the remote
+    player needs no copy of the game but sees half of the host's screen and needs a gamepad. The developers say true multiplayer was not viable because
+    of the physics load. Everything is shared because it is one game; Hydroneer has no enemies. Host/join attempt in the next entry and games/hydroneer.
+  sources:
+  - https://techraptor.net/gaming/guides/hydroneer-multiplayer-guide
+  - https://techraptor.net/gaming/news/hydroneer-20-multiplayer-update-is-out-now
+  - https://steamcommunity.com/app/1106840/discussions/0/3458220484817654192/
+  - https://steamcommunity.com/app/1106840/discussions/0/6756004301608937453
+  checked: '2026-10-22'
+- game: Hydroneer
+  year: 2020
+  engine: Unreal Engine 4 (4.26)
+  project: CoopNet (host/join prototype, UE4SS Lua)
+  url: https://github.com/cranebeaker/coop-anything/tree/main/games/hydroneer
+  other_urls: []
+  kind: mod
+  status: prototype
+  coop_scope:
+    players_visible: 'yes'
+    story: 'no'
+    enemies: 'no'
+    world_state: partial
+    items: partial
+  players: 2 (two copies on one PC)
+  networking: direct-ip
+  open_source: 'no'
+  last_activity: 2026-10
+  qa: automated
+  notes: Dev preview, not playable with friends yet (no release, code not published, loopback only). Each player has their own screen; the host's world is
+    authoritative. A UE4SS Lua mod (needs the experimental build v3.0.1-1181) replays the client's input on a hidden second local player on the host (split
+    screen forced off) and sends player, item, carry, shovel-dirt, dig and runtime-item state back; the client mirrors it with the game's own functions and
+    spawns items the host creates. Not synced - money, shops, machines, quests, vehicles, saves, late join; both copies start a new game. QA - bots in two
+    real game copies on one PC plus real key presses on the client window; last run 564/564 items within 0.1 cm, worst player correction 19 cm, Steam build
+    23218978 (see games/hydroneer).
+  sources:
+  - https://github.com/cranebeaker/coop-anything/tree/main/games/hydroneer
+  - https://store.steampowered.com/app/1106840/
+  - https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest
+  checked: '2026-10-22'
+  made_with_coop_anything: true
+  searched:
+  - 'Repo DIRECTORY.md, games/, and public GitHub issues and PRs for Hydroneer (nothing), 2026-10-22'
+  - 'GitHub repository search via the API: hydroneer, hydroneer multiplayer, hydroneer coop, hydroneer mod (no host/join project), 2026-10-22'
+  - 'Web search: Hydroneer multiplayer mod host join, Hydroneer modding UE4SS (no host/join mod; developers call it unlikely), 2026-10-22'
+  - 'Not checked: Nexus Mods, the Hydroneer modding Discord, Reddit, Steam Workshop in depth, forks and branches of the GitHub hits'
