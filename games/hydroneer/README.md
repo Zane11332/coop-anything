@@ -6,15 +6,16 @@
 | Versions tested | Steam app 1106840, build 23218978; `Mining-Win64-Shipping.exe` SHA-256 `DF27B86E4564100FA792464EA625F64C96C4D155C6C911486FE3769C8D5570B1`; Windows 11 and Linux (Proton) |
 | Projects | Official split-screen / Remote Play co-op; [CoopNet](https://github.com/Zane11332/hydroneer-coopnet), host/join over Steam (this write-up). Both in [DIRECTORY.md](../../DIRECTORY.md) |
 | QA level | official mode: community-reports; CoopNet: automated (two real game clients on one PC, bot-driven), plus five two-PC sessions (Windows host, Linux/Proton friend) whose logs drove the fixes |
-| Last updated | 2026-10-22 |
+| Last updated | 2026-10-23 |
 
 ## Where things stand
 
 Hydroneer ships co-op only as split screen, played online by streaming the host's screen with Steam
 Remote Play Together. CoopNet adds real host/join co-op: each player runs their own copy of the game
-on their own PC and screen, the host's world decides, and the connection goes through Steam. Two
-friends who start a new game together can walk, carry, dig and use tools together. Money, shops,
-machines, building, vehicles, quests and saves are not synced yet. Release 0.2 is an early test build.
+on their own PC and screen, the host's world decides, and the connection goes through Steam. The
+host plays any world, new or saved; the friend joins at any time and receives the host's world.
+Together they can walk, carry, dig and use tools. Money, shops, machines, building, vehicles and
+quests are not synced yet. Release 0.3 is an early test build.
 
 ## Existing work
 
@@ -87,6 +88,10 @@ host's Steam lobby (see [networking-steam-spacewar.md](../../playbook/networking
   client's own jump excluded, repeats within 0.4 s dropped); the client plays them.
 - **Session and version:** inboxes skip what was written before F7, a session id per host start,
   and each side checks the other's CoopNet version.
+- **Late join (0.3):** the friend presses F7 at the main menu; the host autosaves and its relay
+  sends the slot's files (~21 MB, acked 48 KB chunks, SHA-256); the friend's game loads them as
+  slot `CoopNetHost` through the save manager's own calls. Terrain edits after the save are
+  repeated; items keep the host's names (net ids map onto them).
 - **Players' packaging:** one launcher window on Windows, a zenity or text menu on Linux,
   install/uninstall that back up saves and remove exactly what they added.
 
@@ -116,6 +121,17 @@ Last run, 2026-10-22 (fix 5, Steam build 23218978, UE4SS v3.0.1-1181, mock Steam
 | Transport | 0 lines lost |
 | Host work per tick | avg 1.69 ms, max 14 ms, 114 of 2,747 ticks over 4 ms |
 
+Late join, 2026-10-23 (0.3, `-LateJoin`: the host spawns items and digs a hole with the game's own
+shovel before the friend joins):
+
+| Check | Result |
+|---|---|
+| Save transfer (relay only, real 21.9 MB save) | 3.3 s, byte-identical; with 10% of messages dropped 16.7 to 19.8 s, byte-identical |
+| Items after the late join | 572 vs 572, all matched, max 7.3 cm (a shovel just dropped) |
+| Hole dug before the save | ground 147.1 on both sides |
+| Digs after the join | equal (145.7 / 194.5) |
+| Normal co-op after the change | 572/572 within 0.0 cm, 6/6 starter items paired |
+
 Real sessions (Windows host, Linux friend on Proton, Steam relay; latency not measured, the relay's
 one-way figure compares two PCs' clocks): five so far.
 Each one's logs led to a fix (Wine read bug, starter items, terrain, turning, item state,
@@ -127,7 +143,8 @@ friend's side.
 Download the player package from the
 [CoopNet releases](https://github.com/Zane11332/hydroneer-coopnet/releases/latest). Windows:
 `Start Hydroneer Co-op.bat`, Install, then Host or Join. Linux: `bash hydroneer-coop.sh`, plus the
-Steam launch option it prints. Both start a new game and press F7 in the world.
+Steam launch option it prints. The host loads a world and presses F7 in it; the friend presses F7
+at the main menu and is sent the host's world.
 
 ## Known issues
 
@@ -135,6 +152,8 @@ Steam launch option it prints. Both start a new game and press F7 in the world.
   join. Play a new, throwaway world.
 - On the friend's side, tool animations and sounds are new in 0.2 and not yet confirmed in a real
   session; whether a bucket's water mesh shows is not known.
+- Late join is tested with two copies on one PC only, not yet between two PCs or under Proton.
+- Progress is saved in the host's world only.
 - The host's tick work rose with item-state checks and the action log (max 14 ms in the last run).
 - Needs the experimental UE4SS build.
 - The first launch of a new game copy rewrites the real `Settings.ini` (see the trap above).
@@ -143,7 +162,7 @@ Steam launch option it prints. Both start a new game and press F7 in the world.
 
 1. Confirm 0.2 animations and sounds on Linux; trim the host tick cost (state checks spread over
    more ticks, action log off by default).
-2. Late join and saves: send the host's EasyMultiSave slot to the client at join.
+2. Confirm late join in a real Windows/Linux session.
 3. Money, shops and machines (host-side state the client must mirror).
 4. Network chaos tests ([playbook/network-chaos-testing.md](../../playbook/network-chaos-testing.md)).
 5. Find the first-launch `Settings.ini` writer.

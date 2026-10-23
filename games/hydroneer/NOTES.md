@@ -1088,3 +1088,96 @@ relay log and inbox file, plus the host's UE4SS.log.
   and overwritten the owner's newest progress.
 - `run-coop-proto.ps1` now refuses to start while a Hydroneer runs outside `local\test-install`.
   Worth a playbook note: a guard must not run while the owner plays.
+
+## Save transfer / late join, step 1: how the game saves and loads (2026-10-22)
+
+Probe mod `SaveProbe` (test copy only, `HYDRO_SAVEPROBE=1`, saves redirected), under the guard.
+Hooks on the EasyMultiSave natives, OpenLevel, and the blueprint save, load and menu functions.
+
+### Observed
+
+- New game: `SpawnInitialItems`, `GamestateNewGame`, then `EMSAsyncSaveGame:AsyncSaveActors(GM, 3)`.
+- Save: `BP_GameController:Autosave()` calls `AsyncSaveActors(controller, 3)`, then `SaveToCloud`.
+  The slot is EasyMultiSave's current one (default `MySaveGame`);
+  `EMSFunctionLibrary:GetSlotInfoSaveGame(ctx, out name)` reads it.
+- Back to the menu: `GameplayStatics:OpenLevel(ctx, "L_GameWorld", true, "")`. Then
+  `GM_Hydroneer.InGame?` is false; it is true in a world. The menu has a player pawn too, so a pawn
+  is no sign of a world.
+- Load, the save manager's way:
+  1. `SetCurrentSaveGameName(slot)`.
+  2. The main menu's Continue click handler
+     (`BndEvt__UI_MainMenu_ContinueButton_1_…`) opens `UI_Menu_SaveManager_C`.
+  3. On that widget, `SaveSelected(slot)` (which calls `AsyncLoadActors(…, 1, true)` as a
+     preview), then `ContinueMainGame()`.
+  4. The game mode then runs `SetCurrentSaveGameName`, `DoesSaveSlotExist`,
+     `IsSaveSlotCorrupted` and `AsyncLoadActors(GM, 3, true)`, and the world is up with
+     `InGame?` true.
+- After the load: 557 items. 555 kept their names, including all 8 starter tools with game-made
+  names; only the two vehicles (drill, harvester) got new names.
+- All 8 starter tools moved 3 m before the save came back at 0 cm.
+- A level-placed shovel (`BP_ShovelT15`) moved before the save came back at its old spot (364 cm
+  away). Guess: level shop/display items are not saved.
+- Owner's real data unchanged in all four runs.
+
+### Derived
+
+- A client that loads the host's save gets the host's item names, so most items match by name
+  without pairing. Vehicles (new names on load) still need pairing.
+
+## Late join, step 2: built and tested (CoopNet 0.3, 2026-10-23)
+
+### How it works
+
+1. The friend presses F7 at the main menu (`InGame?` false). The client sends `J,late` and its
+   version in its line format every 2 s.
+2. The host:
+   - reads its slot (`GetSlotInfoSaveGame`) and calls `Autosave()`;
+   - waits for `IsSavingOrLoading` to clear (3 s minimum);
+   - copies `Level.sav`, `Player.sav` and `SaveData.sav` to `run/save_out/` and writes
+     `save_out.ready`;
+   - remembers the last terrain edit id.
+3. The relays move the files on a bulk channel:
+   - 48 KB chunks, 8 in flight, acks, resend after 1 s, SHA-256 per file;
+   - Steam: channel 2 reliable, with SendBufferSize (9), SendRateMin (10) and SendRateMax (11)
+     raised; the enum values were read from Steamworks.NET's metadata;
+   - the save does not compress (zlib 98.5%: EasyMultiSave already compresses it).
+4. The client copies the files into its `CoopNetHost` slot (`GetProjectSavedDirectory`,
+   `mkdir` via `os.execute`) and loads it the save manager's way. Then the normal client starts
+   and sends `L,loaded`; the host repeats the terrain edits after the mark.
+5. `N` lines carry the host's FName. A late joiner maps the net id onto the item it already has
+   from the save instead of spawning a copy.
+
+### Bugs found by the test
+
+- **Input from every character.** The pawn input hooks fired for the client's puppet too. Its
+  per-frame jump/crouch events pushed "version" and "loaded" out of the 8-event window before they
+  were ever sent, and its axis events mixed into the friend's movement.
+  - Now only events whose pawn's full name is ours count.
+  - A first try compared `GetAddress()`; it failed inside pcall and silently dropped ALL own input
+    (the client's walk measured 52 cm/s).
+  - One-off events stay in every line for ~10 s ("sticky").
+- **Lua `RemoveSphere` is not saved; the game's own dig is.** A test hole made with a Lua
+  `RemoveSphere` was missing after the load (11.6 cm). A real P1 shovel dig (`MoveDirt`) was there
+  (0.0 cm). Guess: the game saves its own dig records, not raw voxel data.
+- **The in-world check.** F7's check used "has a pawn", which the main menu also has. It now uses
+  `InGame?`.
+
+### Tests (two copies, PlayMode, mocksteam, `-LateJoin`, guard)
+
+- Relay only, with the real 21.9 MB save:
+  - mocksteam and udp: 3.3 s, byte-identical;
+  - with 10% of bulk messages dropped (`--mock-drop 0.1`): 16.7–19.8 s, byte-identical;
+  - the same with the package's own Python 3.12.10.
+- Late join, last run:
+  - before the join the host made 8 runtime items and one real dig (158.7 → 147.1);
+  - the client's ground at that spot was 147.1 (diff 0.0);
+  - 572/572 items match (max 7.3 cm, a shovel just dropped);
+  - later digs: 0.0 cm; the bot walk: 405 cm/s.
+- Normal co-op (`-RenameClientItems`), no regression: 6/6 paired, 572/572 within 0.0 cm, digs 0.0.
+- Owner's real data unchanged in every run.
+
+### Not tested
+
+- A real two-PC session.
+- Linux/Proton: does `os.execute("mkdir")` work there, and is the save path under Proton right?
+- A played-in save with many items and machines.
