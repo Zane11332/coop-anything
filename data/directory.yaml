@@ -7759,29 +7759,32 @@
 - game: Hydroneer
   year: 2020
   engine: Unreal Engine 4 (4.26)
-  project: CoopNet (host/join prototype, UE4SS Lua)
-  url: https://github.com/cranebeaker/coop-anything/tree/main/games/hydroneer
-  other_urls: []
+  project: CoopNet (host/join co-op, UE4SS Lua + Steam relay)
+  url: https://github.com/Zane11332/hydroneer-coopnet
+  other_urls:
+  - https://github.com/cranebeaker/coop-anything/tree/main/games/hydroneer
   kind: mod
-  status: prototype
+  status: alpha
   coop_scope:
     players_visible: 'yes'
     story: 'no'
     enemies: 'no'
     world_state: partial
-    items: partial
-  players: 2 (two copies on one PC)
-  networking: direct-ip
-  open_source: 'no'
+    items: shared
+  players: '2'
+  networking: steam-relay
+  open_source: 'yes'
   last_activity: 2026-10
   qa: automated
-  notes: Dev preview, not playable with friends yet (no release, code not published, loopback only). Each player has their own screen; the host's world is
-    authoritative. A UE4SS Lua mod (needs the experimental build v3.0.1-1181) replays the client's input on a hidden second local player on the host (split
-    screen forced off) and sends player, item, carry, shovel-dirt, dig and runtime-item state back; the client mirrors it with the game's own functions and
-    spawns items the host creates. Not synced - money, shops, machines, quests, vehicles, saves, late join; both copies start a new game. QA - bots in two
-    real game copies on one PC plus real key presses on the client window; last run 564/564 items within 0.1 cm, worst player correction 19 cm, Steam build
-    23218978 (see games/hydroneer).
+  notes: Test build 0.2 (MIT). Each player runs their own copy on their own screen, the host's world decides; connection through Steam (Spacewar
+    app 480, lobby via the friends list). A UE4SS Lua mod (needs the experimental build v3.0.1-1181) replays the friend's input on a hidden second
+    local player on the host and sends back players, items and their state (water, dirt), terrain edits (the Voxel plugin calls themselves),
+    tool animations and action sounds; starter items with game-made names are paired by class. Windows and Linux (Proton). Not synced - money,
+    shops, machines, building, vehicles, quests, saves, late join; both start a new game. QA - bots in two real copies on one PC (564/564 items
+    within 0.0 cm, ground equal at every dig, Steam build 23218978) plus five Windows/Linux sessions over Steam; 0.2 animations and sounds on
+    Linux not yet confirmed (see games/hydroneer).
   sources:
+  - https://github.com/Zane11332/hydroneer-coopnet
   - https://github.com/cranebeaker/coop-anything/tree/main/games/hydroneer
   - https://store.steampowered.com/app/1106840/
   - https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest

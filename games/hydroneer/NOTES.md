@@ -735,3 +735,356 @@ Two two-copy runs under the gameslot lease and the hash guard; real folder uncha
 - GitHub repo search: "hydroneer", "hydroneer multiplayer", "hydroneer coop", "hydroneer mod":
   no host/join mod found. Forks and branches of hits not yet checked.
 - Not yet checked: Nexus, Hydroneer modding Discord, Reddit, Steam Workshop.
+
+## Phase 7 session 1 (2026-10-22): friend-test build 0.1 over Steam (Spacewar 480)
+
+All game runs under the gameslot lease and the hash guard.
+
+### Inputs (downloads approved by the owner, each pinned)
+
+- Steamworks.NET Standalone 2025.164.1: zip SHA-256 `9412348cc404563be5a43a28347cfeda3c679ee044a14d87a507ed2d796a537d`
+  (matches the GitHub release digest); `Windows-x64/steam_api64.dll` SHA-256
+  `eb17909a76668cf9ae0b92a618a34a50f6c73d3a6787cb4dd8ce36a8b10bfb75` (matches
+  [playbook/networking-steam-spacewar.md](../../playbook/networking-steam-spacewar.md)). The game's own
+  `Steamv147\Win64\steam_api64.dll` has no `SteamAPI_InitFlat`, no `ManualDispatch` and no
+  `SteamNetworkingMessages` flat exports, so the relay cannot use it.
+- Python 3.12.10 from NuGet (`python.3.12.10.nupkg`, 14,515,433 bytes, SHA-512 matches nuget.org's
+  `packageHash`; python.org publishes only MD5 and Sigstore for the embeddable zip). Trimmed to what
+  the relay needs.
+
+### What was built
+
+- `coopnet_relay.py`: one relay, `--transport udp | steam | mocksteam`. Steam: AppID 480, ctypes
+  flat API, manual callback dispatch, friends-only lobby tagged `hydroneer_coopnet=1`, rich presence,
+  `ISteamNetworkingMessages` (data channel 0 unreliable + NoNagle, control channel 1 reliable:
+  hello, 1 s keep-alive, bye; peer timeout 20 s), session accept only from lobby members (host) or
+  the host (client), message size at offset 8 and sender at 16 or 12 (auto-detected, logged). The
+  friend finds the host by scanning their Steam friends for a 480 lobby (no overlay invite from a
+  console program); `--lobby <id>` as fallback. `mocksteam` copies the lobby / session-accept /
+  keep-alive rules over localhost for one-PC tests.
+- Mod player mode: `coopnet_config.lua` (written by the installer) names the folder shared with the
+  relay; the relay writes `role.txt`; the player presses **F7** in a world; status lines go back to
+  the relay window. Test bots only with `HYDRO_COOP_BOT=1`.
+- Package `HydroneerCoop-0.1` (19.0 MB zip): `Install.bat` / `Uninstall.bat` / `Host.bat` / `Join.bat`,
+  `README.txt`, `files\` (UE4SS v3.0.1-1181 with only CoopNet), `relay\`, `python\`, `licenses\`.
+  The installer finds Hydroneer through Steam, warns on an untested exe hash, refuses when another
+  mod already uses `dwmapi.dll` / UE4SS, backs up `SaveGames` and `Config`, and writes a manifest;
+  the uninstaller removes exactly that.
+
+### Tests that ran
+
+| Test | Result |
+|---|---|
+| Two relays over `mocksteam` (no game) | 20/20 lines each way, session accepted |
+| **Real Steam, this PC's account**: host relay | `InitFlat` OK as 480, friends-only lobby created and tagged, clean shutdown |
+| **Real Steam**: client relay friend scan | ran, reported no friend hosting (correct) |
+| Player mode, two test copies, `mocksteam` (repo files) | 564/564 items within 0.1 to 0.4 cm, real held W 404 to 407 cm/s, worst correction 16 to 31 cm, late join OK |
+| **Installed package**, two fresh copies, the package's own Python and relay, `mocksteam` | 564/564 items within 0.2 cm, real held W 408 cm/s, worst correction 19 cm, digs, pickups, 8 runtime items, removal |
+| Install twice / uninstall twice | refused with a clear message, nothing changed |
+| Uninstall | both game folders byte-identical to before install (SHA-256 of every file) |
+| Real Steam from the package's own Python | lobby created, clean shutdown |
+
+- Bug found and fixed: a late-joining client read a backlog of host state lines that acked the same
+  input line, and each re-applied the same correction (27 snaps, 25,900 cm). The correction now
+  also shifts the acked line. The host now repeats spawn lines of runtime items and the removed-item
+  list every ~5 s for late joiners. Digs made before the friend presses F7 are not replayed.
+- Bug found and fixed: the relay showed a status line left over from an earlier session.
+- The first launch of each new test copy rewrote the real `Settings.ini` once more
+  (`r.setres ...w` to `...f`); the guard restored it. Players install into their existing game
+  folder, so this is expected at most once (window mode), and the installer backs up `Config`.
+
+### Not tested (needs two Steam accounts)
+
+- A real two-account session over Steam's relays: lobby join, session accept, the message sender
+  offset on x64, latency and loss through Valve's network.
+- Different game versions, other mods next to it, and the Steam overlay or Spacewar status side effects.
+
+## Phase 7 session 2 (2026-10-22): Linux (Proton) support in the friend-test build
+
+Hydroneer has no native Linux build (Steam platforms: Windows only); ProtonDB rates it Gold
+(62 reports, checked 2026-10-22). On Linux the game, UE4SS and the mod run under Proton; the relay
+runs natively next to the Linux Steam client.
+
+### What was added
+
+- Relay: loads `libsteam_api.so` on Linux (from the same verified Steamworks.NET zip,
+  `OSX-Linux-x64/`). Steam packs callback structs with 4 on Linux/macOS and 8 on Windows; of the
+  callbacks used, only `LobbyCreated_t` moves (lobby id at 4 instead of 8). The relay reads the
+  platform's offset and checks that it decodes a chat-type SteamID (top byte 0x01, type 8), else
+  tries the other. `SteamNetworkingMessage_t` and the other structs used have the same layout.
+- `install.sh`: finds Steam (native `~/.steam/steam`, `~/.local/share/Steam`, Flatpak, Snap), reads
+  `libraryfolders.vdf`, finds `appmanifest_1106840.acf`, checks the exe hash, refuses when another
+  mod has `dwmapi.dll`/UE4SS, backs up `SaveGames` and `Config` from
+  `<library>/steamapps/compatdata/1106840/pfx/drive_c/users/steamuser/AppData/Local/Mining/Saved`,
+  writes the run folder as a Wine path (`Z:/home/...`), records a manifest, and prints the Steam
+  launch option `WINEDLLOVERRIDES="dwmapi=n,b" %command%` (Proton loads its own dwmapi otherwise).
+- `uninstall.sh`, `host.sh`, `join.sh` (system `python3` 3.7+, checked); README Linux section.
+
+### Tests that ran (WSL Ubuntu 22.04, Python 3.10.12; no game, no Steam client in WSL)
+
+| Test | Result |
+|---|---|
+| `bash -n` on the four scripts | all parse |
+| Two Linux relays from package copies, `mocksteam` and `udp` | 10/10 lines each way, session accepted, roles written |
+| Load `libsteam_api.so`, resolve every flat function the relay uses | 38 resolved; `IsSteamRunning()` false (no Steam in WSL) |
+| `LobbyCreated_t` parsing, Linux and Windows layouts | both give the lobby id |
+| Steam transport with no Steam client | stops with "Steam is not running..." |
+| `install.sh` on a fake Steam layout (second library, Proton save folder, the real exe) | found the game through `libraryfolders.vdf`, backed up 2 save files, installed 7 files, Wine-path config, launch option printed |
+| Install twice; another mod's `dwmapi.dll`; changed exe answered "no" | refused / refused, folder unchanged / nothing installed |
+| `uninstall.sh` | game folder identical to before (SHA-256); second uninstall refused |
+
+### Not tested (needs a Linux PC with Steam and the game)
+
+- UE4SS loading under Proton with the launch option; the mod's file paths through `Z:`; real
+  Steam from a native relay on Linux; Flatpak/Snap Steam (the relay may not reach a sandboxed client).
+
+### Finding: the real `Settings.ini` changed again at 18:00, an hour after the last test run
+
+- Hash check of the owner's real folder against the backup: 52 files, only `Settings.ini` differs
+  (`r.setres ...w` vs `...f`, modified 18:00:28). Steam `LastPlayed` for app 1106840 is 17:01:12 (the
+  test copies, which run as app 1106840); no game process was started after that.
+- Guess (unverified): Steam Cloud. The new test copies wrote the real file at 16:58 (first launch),
+  Steam may have uploaded it when those test games exited, the guard restored the local file at
+  17:01, and Steam synced the cloud copy back at 18:00. If so, test copies running as app 1106840 can
+  push this one file through Steam Cloud. Saves are unaffected (all match the backup; test saves
+  are redirected).
+
+## Phase 7, session 3: one launcher per OS (2026-10-22)
+
+### Built
+
+- Windows: `Start Hydroneer Co-op.bat` opens `launcher.ps1`, a WinForms window. It has buttons for
+  Install, Uninstall, Read me, Open logs, Host, Join and Stop, a Lobby box, and a live log. It calls
+  `install.ps1 -Detect` / `-NonInteractive` (exit code 3 means the version differs, then a yes/no box),
+  runs the bundled Python relay with `--stop-file`, and Stop writes that file (it kills the relay
+  after 4 s only if the relay is still running).
+- Linux: `bash hydroneer-coop.sh` uses a zenity window when zenity and a display are present,
+  and a text menu otherwise (`HC_TEXT=1` forces the text menu). Host/Join show a live log, and
+  closing that log stops the relay through the stop file.
+- The relay got `--stop-file` (also honoured while waiting for a mock lobby), `STOPPED:` lines for
+  early errors, and a clear error when several friends are hosting and there is no terminal.
+- The old .bat/.sh scripts are unchanged and still work on their own.
+
+### Tests that ran
+
+| Test | Result |
+|---|---|
+| Two launcher windows (host + join), `mocksteam`, package test copies, `-SelfTest` | host connected after 11 s, client after 5 s; Stop gave a clean exit (code 0, "relay stopped"); buttons enabled correctly in each state; after uninstall both game folders were byte-identical; the owner's real data was unchanged (52 files) |
+| Linux text menu, host and join at once from two package copies (WSL, `mocksteam`) | both `STATUS: connected`; install/uninstall through the menu; both fake game folders identical to before (SHA-256) |
+| Linux zenity path with a stand-in `zenity` that records calls | list → install → host log window → question → uninstall → list; status text updates; fake game folder identical afterwards |
+
+### Not tested
+
+- Real zenity and a real desktop; real Steam between two accounts; Proton.
+
+### Bug found by the owner: "Install says already installed, Uninstall can't find it"
+
+- Cause, observed: two places held the "installed" state. Install checks a marker inside the game
+  folder (`ue4ss\HydroneerCoop-installed.txt`), while Uninstall and the launcher looked for a
+  record in the package folder (`installed.json` / `installed-linux.txt`). After the package
+  folder was replaced (a fresh unzip, or here a rebuild of the folder the owner had installed from),
+  the game still had the mod but no package copy could remove it.
+- Fix: the game folder decides. `install -Detect` / `--detect` now prints `INSTALLED=yes|no` from
+  the marker, and the launcher and Linux menu use that. Install also keeps a copy of its record in
+  the game's `ue4ss` folder. Uninstall finds the game through Steam when the package has no record
+  (or a stale one). For installs made before this fix (a marker and no record), it removes
+  `dwmapi.dll` only if it matches the package's own copy.
+- The build script now empties the dist folder instead of deleting it, and refuses to touch one
+  that has been installed from (`installed.json`, `installed-linux.txt` or `backups`).
+- Tests (test copy `hydroneer-pkgtest-host` on Windows; a fake Steam layout in WSL), each passing on
+  both OSes:
+  - Install from copy A, uninstall from copy B.
+  - The old state (marker only, no record): uninstalled from a fresh copy.
+  - Uninstall from A after B already removed the mod: says nothing to remove and clears the stale record.
+  - Installing twice: refused.
+  - Linux menu: install from B, then the menu from A shows it as installed and uninstalls it.
+  - In every case the game folder came back byte-identical (SHA-256).
+
+## First real Windows + Linux (Proton) session (2026-10-22)
+
+- Observed (host's relay log and UE4SS.log; the Linux player's logs not seen yet):
+  - The Steam relay connected and the client's lines reached the host (~60/s), with P2 driven
+    correctly (replays, `TryPickupItem` on P2).
+  - The host sent ~24 lines/s (p99 735 bytes, max 746, no CR).
+  - Yet the Linux player saw nothing from the host: no host player, no digs, no pickups.
+- Derived: the client game never read its inbox. Wine's CRT (`dlls/msvcrt/file.c`) sets `WX_ATEOF`
+  on an fd after a 0-byte read, and every later `_read` returns 0 until `_lseek` clears it. The mod
+  opened `from_net.txt` while it was still empty, so on Proton it stayed at EOF forever. Windows
+  doesn't do this, which is why every Windows-only test passed.
+- Fix: `f:seek("cur", 0)` before each `f:read("a")` in `line_reader`. Shipped to the Linux player as
+  `CoopNet-linux-fix-1` (a replacement `main.lua`).
+- Not tested yet:
+  - Under Wine (none available here).
+  - The Windows regression with the seek (needs a game run; the owner's game was in use).
+- Playbook lesson: tailing a file that another process appends to needs a seek before each read under Wine/Proton.
+- Windows regression check with the seek fix (2026-10-22, two copies, PlayMode, mocksteam, under the guard): client
+  items applied 14206 unknown 0; mirror pickups 2 drops 1, dirt 2, digs 2; dig ground diff 0.0 cm both digs;
+  echo comparisons 0-8 cm; runtime copies spawned 8 failed 0; host lines=2860 lost=0. The real-key
+  steps were skipped (client window not in front, by design). Owner's real data unchanged (52 files).
+  Still not tested under Wine/Proton.
+
+## Second real Windows + Linux session: desyncs (2026-10-22)
+
+The owner reported three problems: the host never turned on the friend's screen, the friend's own
+pickups didn't show for him, and digs and dumps didn't line up. Evidence: the friend's UE4SS.log,
+relay log and inbox file, plus the host's UE4SS.log.
+
+### Observed
+
+- **Starter items.** A new game spawns its starter tools at runtime, with game-made names
+  (`BP_ShovelT1_C_2147479685`). These names differ between two PCs.
+  - The host sent them by name. The friend had none of them: 1,653 updates for the shovel alone,
+    and "unknown" climbed to over 2,000.
+  - The friend carried the host's starter shovel, so `mirror pickups` stayed at 0 all session.
+  - Two copies on one PC get *identical* names, which is why every earlier test passed.
+- **Stale lines.** The friend's inbox began with a quit host game's lines. The client read the
+  inbox from the start at F7 and took in that game's N1–N8, which clashed with the new host's N1.
+- **Digs.** Host P1's digs were mirrored with the client's own `RemoveDirtByLocation` and
+  `MoveDirt`. The client's ground never changed: it stayed at 155 while the host's went to 32.
+  Dumps also went to the client's own aim.
+- **Turning.** The puppet's yaw was set on the pawn, and its local controller overwrote it.
+
+### Fixes
+
+- Pairing: the host sends `A` lines for items that existed at F7 with game-made names. The client
+  pairs each with its nearest unpaired item of the same class, or spawns a copy if it has none.
+- Terrain edits: the host hooks `/Script/Voxel.VoxelSphereTools` (RemoveSphere, AddSphere,
+  SetValueSphere, WithDurability and the Async variants). It sends each call as a `W` line, and the
+  client makes the same call on `Default__VoxelSphereTools`.
+  - Discovery: a scoop is `RemoveSphere(EmberCradle, pos, 30, true x4)`; a dump is
+    `AddSphere(…, 28, true x4)`.
+  - With the host capability `W`, the old V-path dig mirror is skipped.
+- Inboxes skip their existing content at the first read. S lines carry a session id; on a change,
+  the client resets its copies and shows "host restarted co-op".
+- The puppet's controller gets SetControlRotation as well.
+- Logging: everything also goes to `<run>/coopnet-game.log`. Added:
+  - unknown host names with counts every ~20 s;
+  - carry-mirror misses;
+  - puppet yaw and distance;
+  - per terrain edit, the ground before and after.
+- Test switch `-RenameClientItems` (`HYDRO_COOP_TEST_RENAME`): the client remakes its starter items
+  under new names, the case two real PCs have.
+
+### Test (two copies, PlayMode, mocksteam, `-RenameClientItems`, under the guard)
+
+- Pairing: 6 paired, 0 cm apart.
+- Terrain edits: dig 1 `RemoveSphere`, ground 160.2 → 145.7 on both (diff 0.0 cm); dig 2
+  `AddSphere`, 167.2 → 194.5 on both (diff 0.0).
+- The client made no local dig calls of its own.
+- Puppet yaw matched the host's (−69 / −69).
+- Mirror: pickups 2, drops 1, dirt 2.
+- Owner's real data unchanged.
+
+### Not tested
+
+- Host P1 digging in the harness. It goes through the same Voxel hook, so W is player-independent
+  by construction, but no P1 dig ran.
+- A real Linux session.
+
+## Third real session: bucket water, own dig animation (2026-10-22)
+
+### Observed (the friend's coopnet-game.log)
+
+- Pairing worked: 10 starter items, 0 cm apart.
+- Terrain edits matched within 0–2.4 cm (one 10 cm).
+- Each dig compare was logged 3 times, because Z lines are sent 3 times; deduped now.
+- "Not found here" kept reporting counts from before pairing; it now resets after each report.
+
+### Derived
+
+- Bucket water: the bucket's state lives in fields (`HasLiquidType?`, `DirtLoads`, `IceLoads`,
+  `Vein`) and in mesh visibility (`WaterMesh`, `DirtMesh`). Only the shovel's `Dirt` mesh was
+  mirrored before.
+- Own dig animation: an item's swing is `BP_ParentItem_C:PlayPrimaryUseAnim` /
+  `PlaySecondaryUseAnim` (no args), and the effects are `BP_ParentShovel_C:DirtFX(bool)`. The
+  client's dig only runs on the host, so none of these ran on the client.
+
+### Built
+
+- Generic item state: per class, reflection (`ForEachProperty` up to BP_ParentItem_C) finds the
+  int, byte, enum, bool and float fields and the mesh components. Carry, hover, proxy and physics
+  names are skipped.
+  - The host sends `T|name|state` on a change, and again in the full resend once changed.
+  - The client applies it to its copy, and to its held proxy when it carries the item.
+- Use animations: the host hooks PlayPrimary/SecondaryUseAnim and DirtFX and sends
+  `Y|id|@P1/@P2/name|fn|arg`. The client plays the same function on its item (its proxy if held).
+- Action trace on both sides: an allow-list of action-like function names on BP_GameController_C,
+  AC_Animator_C and the class chain of every carried item, with simple args. The first 12 calls of
+  each are logged, then every 50th, plus a 30 s summary.
+- Two crashes on the way, both access violations inside UE4SS (at 0x10):
+  - Hooking all 104 controller functions (per-frame traces, highlighting, HitResult out params).
+  - Calling methods on null object properties during reflection: pcall cannot catch a native
+    access violation. Now only "Mesh"/"Dirt" object fields are considered, after an IsValid check.
+
+### Test (two copies, PlayMode, mocksteam, -RenameClientItems, guard)
+
+- Animation: host P2 dig → `DirtFX` and `PlayPrimaryUseAnim` on @P2; the client played both on
+  its shovel.
+- Bucket test: the host set `HasLiquidType?` 1, then `EmptyLiquid()`; the client mirrored 1 and 0.
+  But `HasWater()` called directly did not show `WaterMesh`: how the game really shows water is
+  not known yet.
+- Digs: diff 0.0 cm.
+- Host tick: avg 1.18 ms, max 8 ms.
+- Owner's real data unchanged.
+
+## Fourth real session: no animations or sounds on the friend's side (2026-10-22)
+
+### Observed
+
+- Host log: it sent 49 use-animation/DirtFX lines (30 for @P2).
+- Friend log: 12+ were played, none failed. But his `AC_Animator_C:PlayAnimation` count was 0.
+  The host's trace shows `PlayPrimaryUseAnim` → `AC_Animator:PlayAnimation(0.5, StaticMesh,
+  C_Mov_ShovelDig, C_Rot_ShovelDig, false)`.
+- Derived: on the client, PlayPrimaryUseAnim's blueprint never gets to PlayAnimation. A guess
+  (unverified): it checks for a real local carrier.
+
+### Fix
+
+- The host hooks `AC_Animator_C:PlayAnimation` and sends seconds, mesh component name and curve
+  asset paths. The client calls PlayAnimation on its item and its held proxy.
+- Sounds: the host hooks five GameplayStatics functions: PlaySoundAtLocation,
+  SpawnSoundAtLocation, PlaySound2D, SpawnSound2D and SpawnSoundAttached.
+  - A sound is attributed to a player by its context object: controller, carried item or proxy,
+    or P1's pawn. Failing that, by a world action within 1.2 s and 10 m.
+  - Sent as `U` lines; the client plays them, with 2D sounds only for P2.
+  - P2's own pawn sounds are skipped, and so are footsteps, which come from the walk animation and
+    play on the puppet too.
+  - The same sound at the same 50 cm cell again within 0.4 s is dropped: a shovel's bounces gave
+    20+ S_DropMetalNormal.
+
+### Test (guard)
+
+- The client ran PlayAnimation for the dig and empty curves.
+- 12 sounds sent and 11 played (the one skipped was the host's own 2D sound):
+  - S_ShovelDig and S_EmptyDirt (2D);
+  - S_Pickup ×3, S_ThrowItem;
+  - S_DropMetalNormal ×2, S_EnterWater2, S_Hrrm ×3.
+- Digs diff 0.0. Owner's data unchanged.
+- Not checkable here: whether the swing is visible on screen and the sounds are audible
+  (the bot can't see or hear).
+
+## Fix 5, and a guard lesson (2026-10-22)
+
+### Fix 5
+
+- His side still had no animations or sounds. The host log shows 16 sounds and 25 animation lines
+  sent for P2, so the problem is on the client side: an older fix installed, or playback failing
+  under Proton. Unknown until his log arrives.
+- Version check: `MOD_VERSION`. The client sends a `V` event; the host's S line carries the
+  version. Each side shows a status line on a mismatch, and the host warns when a client sends no
+  version (older than fix 5).
+- Sounds:
+  - P2's pawn sounds now count for P2, except jump, landing and footsteps (SC_EmptyWater had been
+    skipped).
+  - An item a player just dropped counts as theirs for 5 s, which covers landing sounds of thrown
+    items.
+- Test: versions matched (fix5/fix5); 12 sounds sent, 11 played; digs 0.0 cm.
+
+### Guard lesson
+
+- During that test the owner's REAL game was running. It autosaved its world 9 s after the guard's
+  snapshot, and the guard reported 5 changed save files.
+- It had no copy of those files, so it left them alone. With a copy, it would have "restored" them
+  and overwritten the owner's newest progress.
+- `run-coop-proto.ps1` now refuses to start while a Hydroneer runs outside `local\test-install`.
+  Worth a playbook note: a guard must not run while the owner plays.
